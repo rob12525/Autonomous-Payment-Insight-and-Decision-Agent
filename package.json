@@ -1,0 +1,12 @@
+{
+  "devDependencies": {
+    "vitest": "^4.0.18"
+  },
+  "dependencies": {
+    "dotenv": "^17.2.3"
+  }
+  ,
+  "scripts": {
+    "integrate": "node ./run_integration.js"
+  }
+}

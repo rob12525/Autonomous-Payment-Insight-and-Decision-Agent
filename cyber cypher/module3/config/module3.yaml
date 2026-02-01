@@ -1,0 +1,53 @@
+# Module 3 Configuration
+
+safety_guardrails:
+  # Hard limits (cannot be violated)
+  max_traffic_reduction_pct: 50
+  max_retry_increase: 3
+  min_confidence_threshold: 0.6
+  max_concurrent_actions: 3
+  min_observation_window_min: 5
+  high_risk_requires_human: true
+  
+  # Critical infrastructure protection
+  critical_issuers:
+    - CHASE
+    - HDFC
+    - ICICI
+  critical_payment_methods:
+    - card
+
+action_executor:
+  # IMPORTANT: Set to false only after thorough testing
+  simulation_mode: true
+  auto_expiration: true
+
+rollback_manager:
+  # Rollback triggers
+  degradation_threshold_pct: -5.0
+  min_improvement_threshold_pct: 2.0
+  observation_window_min: 10
+  
+  # Anomaly detection thresholds
+  max_error_rate: 0.15
+  max_p95_latency_ms: 5000
+  max_timeout_rate: 0.10
+
+outcome_tracker:
+  # Allow 20% deviation from expected improvement
+  expectation_tolerance_pct: 20
+
+learning_system:
+  vector_db_path: "./chroma_db"
+  max_learning_entries: 1000
+  similar_cases_top_k: 3
+  
+  # Confidence calibration
+  confidence_update_rate: 0.05
+  pattern_confidence_floor: 0.3
+  pattern_confidence_ceiling: 0.95
+
+logging:
+  level: INFO
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "logs/module3.log"
