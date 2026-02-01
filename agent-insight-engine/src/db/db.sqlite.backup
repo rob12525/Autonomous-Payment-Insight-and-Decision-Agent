@@ -1,0 +1,401 @@
+/**
+ * Database Connection & Management
+ * Initializes and manages SQLite database for persistence
+ */
+
+import Database from 'better-sqlite3';
+import path from 'path';
+import { SCHEMA_SQL } from './schema.js';
+import type {
+  Decision,
+  ActionExecution,
+  LearningOutcome,
+  AuditLog,
+  DecisionMetrics,
+} from './schema.js';
+
+const DB_PATH = path.join(process.cwd(), 'payment-system.db');
+
+let db: Database.Database | null = null;
+
+/**
+ * Initialize database connection and create tables
+ */
+export function initializeDatabase(): Database.Database {
+  if (db) return db;
+
+  db = new Database(DB_PATH);
+
+  // Enable foreign keys
+  db.pragma('foreign_keys = ON');
+
+  // Create all tables
+  db.exec(SCHEMA_SQL);
+
+  console.log('✅ Database initialized:', DB_PATH);
+  return db;
+}
+
+/**
+ * Get database instance (must call initializeDatabase first)
+ */
+export function getDatabase(): Database.Database {
+  if (!db) {
+    throw new Error('Database not initialized. Call initializeDatabase() first.');
+  }
+  return db;
+}
+
+/**
+ * Save a decision to database
+ */
+export function saveDecision(decision: Decision): void {
+  const database = getDatabase();
+  const stmt = database.prepare(`
+    INSERT INTO decisions (
+      id, timestamp, actionType, confidence, anomalyScore, patterns,
+      hypothesis, approvalRequired, humanApprovalGiven, approvedBy,
+      approvedAt, status
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  stmt.run(
+    decision.id,
+    decision.timestamp,
+    decision.actionType,
+    decision.confidence,
+    decision.anomalyScore,
+    JSON.stringify(decision.patterns),
+    decision.hypothesis,
+    decision.approvalRequired ? 1 : 0,
+    decision.humanApprovalGiven ? 1 : 0,
+    decision.approvedBy || null,
+    decision.approvedAt || null,
+    decision.status
+  );
+}
+
+/**
+ * Get decision by ID
+ */
+export function getDecision(id: string): Decision | null {
+  const database = getDatabase();
+  const stmt = database.prepare('SELECT * FROM decisions WHERE id = ?');
+  const row = stmt.get(id) as any;
+
+  if (!row) return null;
+
+  return {
+    id: row.id,
+    timestamp: row.timestamp,
+    actionType: row.actionType,
+    confidence: row.confidence,
+    anomalyScore: row.anomalyScore,
+    patterns: JSON.parse(row.patterns),
+    hypothesis: row.hypothesis,
+    approvalRequired: row.approvalRequired === 1,
+    humanApprovalGiven: row.humanApprovalGiven === 1,
+    approvedBy: row.approvedBy,
+    approvedAt: row.approvedAt,
+    status: row.status,
+  };
+}
+
+/**
+ * Update decision status
+ */
+export function updateDecisionStatus(
+  id: string,
+  status: 'pending' | 'approved' | 'executed' | 'failed' | 'rejected'
+): void {
+  const database = getDatabase();
+  const stmt = database.prepare('UPDATE decisions SET status = ? WHERE id = ?');
+  stmt.run(status, id);
+}
+
+/**
+ * Save action execution
+ */
+export function saveActionExecution(execution: ActionExecution): void {
+  const database = getDatabase();
+  const stmt = database.prepare(`
+    INSERT INTO action_executions (
+      id, decisionId, actionType, simulatedMetrics, outcome,
+      executedAt, duration, riskLevel, details
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  stmt.run(
+    execution.id,
+    execution.decisionId,
+    execution.actionType,
+    JSON.stringify(execution.simulatedMetrics),
+    execution.outcome,
+    execution.executedAt,
+    execution.duration,
+    execution.riskLevel,
+    JSON.stringify(execution.details)
+  );
+}
+
+/**
+ * Save learning outcome (feedback loop)
+ */
+export function saveLearningOutcome(outcome: LearningOutcome): void {
+  const database = getDatabase();
+  const stmt = database.prepare(`
+    INSERT INTO learning_outcomes (
+      id, executionId, decisionId, actualMetrics, predictedMetrics,
+      accuracy, feedback, recordedAt
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  stmt.run(
+    outcome.id,
+    outcome.executionId,
+    outcome.decisionId,
+    JSON.stringify(outcome.actualMetrics),
+    JSON.stringify(outcome.predictedMetrics),
+    outcome.accuracy,
+    outcome.feedback,
+    outcome.recordedAt
+  );
+}
+
+/**
+ * Save audit log entry
+ */
+export function saveAuditLog(log: AuditLog): void {
+  const database = getDatabase();
+  const stmt = database.prepare(`
+    INSERT INTO audit_logs (
+      id, timestamp, level, module, event, userId, data,
+      decisionId, executionId, outcomeId
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  stmt.run(
+    log.id,
+    log.timestamp,
+    log.level,
+    log.module,
+    log.event,
+    log.userId || null,
+    JSON.stringify(log.data),
+    log.relatedIds.decisionId || null,
+    log.relatedIds.executionId || null,
+    log.relatedIds.outcomeId || null
+  );
+}
+
+/**
+ * Get all decisions with optional filtering
+ */
+export function getDecisions(filters?: {
+  status?: string;
+  minConfidence?: number;
+  limit?: number;
+}): Decision[] {
+  const database = getDatabase();
+  let query = 'SELECT * FROM decisions WHERE 1=1';
+  const params: any[] = [];
+
+  if (filters?.status) {
+    query += ' AND status = ?';
+    params.push(filters.status);
+  }
+
+  if (filters?.minConfidence !== undefined) {
+    query += ' AND confidence >= ?';
+    params.push(filters.minConfidence);
+  }
+
+  query += ' ORDER BY timestamp DESC';
+
+  if (filters?.limit) {
+    query += ' LIMIT ?';
+    params.push(filters.limit);
+  }
+
+  const stmt = database.prepare(query);
+  const rows = stmt.all(...params) as any[];
+
+  return rows.map((row: any) => ({
+    id: row.id,
+    timestamp: row.timestamp,
+    actionType: row.actionType,
+    confidence: row.confidence,
+    anomalyScore: row.anomalyScore,
+    patterns: JSON.parse(row.patterns),
+    hypothesis: row.hypothesis,
+    approvalRequired: row.approvalRequired === 1,
+    humanApprovalGiven: row.humanApprovalGiven === 1,
+    approvedBy: row.approvedBy,
+    approvedAt: row.approvedAt,
+    status: row.status,
+  }));
+}
+
+/**
+ * Get execution by decision ID
+ */
+export function getExecutionsByDecision(decisionId: string): ActionExecution[] {
+  const database = getDatabase();
+  const stmt = database.prepare(
+    'SELECT * FROM action_executions WHERE decisionId = ? ORDER BY executedAt DESC'
+  );
+  const rows = stmt.all(decisionId) as any[];
+
+  return rows.map((row: any) => ({
+    id: row.id,
+    decisionId: row.decisionId,
+    actionType: row.actionType,
+    simulatedMetrics: JSON.parse(row.simulatedMetrics),
+    outcome: row.outcome,
+    executedAt: row.executedAt,
+    duration: row.duration,
+    riskLevel: row.riskLevel,
+    details: JSON.parse(row.details),
+  }));
+}
+
+/**
+ * Get learning outcomes for a decision
+ */
+export function getOutcomesByDecision(decisionId: string): LearningOutcome[] {
+  const database = getDatabase();
+  const stmt = database.prepare(
+    'SELECT * FROM learning_outcomes WHERE decisionId = ? ORDER BY recordedAt DESC'
+  );
+  const rows = stmt.all(decisionId) as any[];
+
+  return rows.map((row: any) => ({
+    id: row.id,
+    executionId: row.executionId,
+    decisionId: row.decisionId,
+    actualMetrics: JSON.parse(row.actualMetrics),
+    predictedMetrics: JSON.parse(row.predictedMetrics),
+    accuracy: row.accuracy,
+    feedback: row.feedback,
+    recordedAt: row.recordedAt,
+  }));
+}
+
+/**
+ * Get audit logs with filtering
+ */
+export function getAuditLogs(filters?: {
+  level?: string;
+  module?: string;
+  startTime?: number;
+  endTime?: number;
+  limit?: number;
+}): AuditLog[] {
+  const database = getDatabase();
+  let query = 'SELECT * FROM audit_logs WHERE 1=1';
+  const params: any[] = [];
+
+  if (filters?.level) {
+    query += ' AND level = ?';
+    params.push(filters.level);
+  }
+
+  if (filters?.module) {
+    query += ' AND module = ?';
+    params.push(filters.module);
+  }
+
+  if (filters?.startTime) {
+    query += ' AND timestamp >= ?';
+    params.push(filters.startTime);
+  }
+
+  if (filters?.endTime) {
+    query += ' AND timestamp <= ?';
+    params.push(filters.endTime);
+  }
+
+  query += ' ORDER BY timestamp DESC';
+
+  if (filters?.limit) {
+    query += ' LIMIT ?';
+    params.push(filters.limit);
+  }
+
+  const stmt = database.prepare(query);
+  const rows = stmt.all(...params) as any[];
+
+  return rows.map((row: any) => ({
+    id: row.id,
+    timestamp: row.timestamp,
+    level: row.level,
+    module: row.module,
+    event: row.event,
+    userId: row.userId,
+    data: JSON.parse(row.data),
+    relatedIds: {
+      decisionId: row.decisionId,
+      executionId: row.executionId,
+      outcomeId: row.outcomeId,
+    },
+  }));
+}
+
+/**
+ * Get dashboard metrics
+ */
+export function getMetrics(): DecisionMetrics {
+  const database = getDatabase();
+
+  const totalStmt = database.prepare('SELECT COUNT(*) as count FROM decisions');
+  const total = (totalStmt.get() as any).count;
+
+  const executedStmt = database.prepare(
+    "SELECT COUNT(*) as count FROM decisions WHERE status = 'executed'"
+  );
+  const executed = (executedStmt.get() as any).count;
+
+  const approvedStmt = database.prepare(
+    "SELECT COUNT(*) as count FROM decisions WHERE status = 'approved'"
+  );
+  const approved = (approvedStmt.get() as any).count;
+
+  const rejectedStmt = database.prepare(
+    "SELECT COUNT(*) as count FROM decisions WHERE status = 'rejected'"
+  );
+  const rejected = (rejectedStmt.get() as any).count;
+
+  const confidenceStmt = database.prepare('SELECT AVG(confidence) as avg FROM decisions');
+  const avgConfidence = ((confidenceStmt.get() as any).avg || 0) as number;
+
+  const accuracyStmt = database.prepare('SELECT AVG(accuracy) as avg FROM learning_outcomes');
+  const avgAccuracy = ((accuracyStmt.get() as any).avg || 0) as number;
+
+  const successStmt = database.prepare(
+    "SELECT COUNT(*) as count FROM action_executions WHERE outcome = 'success'"
+  );
+  const successCount = (successStmt.get() as any).count;
+  const successRate = total > 0 ? (successCount / total) * 100 : 0;
+
+  return {
+    totalDecisions: total,
+    executedDecisions: executed,
+    approvedDecisions: approved,
+    rejectedDecisions: rejected,
+    averageConfidence: Number(avgConfidence.toFixed(2)),
+    averageAccuracy: Number(avgAccuracy.toFixed(2)),
+    successRate: Number(successRate.toFixed(2)),
+    lastUpdated: Date.now(),
+  };
+}
+
+/**
+ * Close database connection
+ */
+export function closeDatabase(): void {
+  if (db) {
+    db.close();
+    db = null;
+    console.log('✅ Database connection closed');
+  }
+}

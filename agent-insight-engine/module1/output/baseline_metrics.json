@@ -1,0 +1,60 @@
+{
+  "timestamp": 1769906205210,
+  "successRate": 0.9908333333333333,
+  "latency": {
+    "p50": 503.0,
+    "p95": 773.0,
+    "p99": 800.0
+  },
+  "totalTransactions": 6000,
+  "totalRetries": 0,
+  "retryRatio": 0.0,
+  "errorBreakdown": [
+    {
+      "code": "PAYMENT_FAILED",
+      "count": 55,
+      "percentage": 0.009166666666666667
+    }
+  ],
+  "issuerMetrics": [
+    {
+      "issuerId": "amex",
+      "issuerName": "Amex",
+      "successRate": 0.9926686217008798,
+      "latency": {
+        "p50": 503.0,
+        "p95": 773.0,
+        "p99": 800.0
+      },
+      "transactionCount": 2046,
+      "errorCount": 15,
+      "retryCount": 0
+    },
+    {
+      "issuerId": "mastercard",
+      "issuerName": "Mastercard",
+      "successRate": 0.9887697805002552,
+      "latency": {
+        "p50": 503.0,
+        "p95": 773.0,
+        "p99": 800.0
+      },
+      "transactionCount": 1959,
+      "errorCount": 22,
+      "retryCount": 0
+    },
+    {
+      "issuerId": "visa",
+      "issuerName": "Visa",
+      "successRate": 0.9909774436090225,
+      "latency": {
+        "p50": 503.0,
+        "p95": 773.0,
+        "p99": 800.0
+      },
+      "transactionCount": 1995,
+      "errorCount": 18,
+      "retryCount": 0
+    }
+  ]
+}
